@@ -20,7 +20,7 @@ It runs **before** you commit to the task. It never touches your main Claude ses
 ## Requirements
 
 - Node.js 18 or higher
-- An Anthropic API key — get one free at [console.anthropic.com](https://console.anthropic.com)
+- An Anthropic API key — create one at [console.anthropic.com](https://console.anthropic.com) (each analysis costs ~$0.001 with Haiku)
 
 ---
 
