@@ -38,7 +38,9 @@ npm install -g claude-check
 claude-check setup
 ```
 
-This walks you through two questions and saves your config locally. You only need to do this once.
+This walks you through three questions and saves your config locally. You only need to do this once.
+
+Your API key is stored only on your machine using [`conf`](https://github.com/sindresorhus/conf) (a standard local config library). It is never sent anywhere except directly to `api.anthropic.com` when you run an analysis.
 
 ```
 Enter your Anthropic API key: sk-ant-...
@@ -50,7 +52,15 @@ Your claude.ai plan:
 
 Enter plan [1]: 2
 
-API key saved. Plan set to: Max 5x.
+Analysis model:
+  1. Haiku (default) — fast and cheap (~$0.001/run). Accurate for most prompts.
+  2. Sonnet — higher accuracy on complex or nuanced prompts (~$0.01/run).
+     Use this if you find Haiku verdicts are consistently off for your tasks.
+     You can also override per-run with --model.
+
+Enter model [1]: 1
+
+API key saved. Plan set to: Max 5x. Model set to: Haiku (fast).
 ```
 
 Your plan tier is used to calibrate the safe/caution/do-not-start verdict — a Max 20x user at 20% remaining has far more absolute capacity than a Pro user at 20%. You can change it at any time by re-running `claude-check setup` or passing `--plan` on any run.
