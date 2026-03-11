@@ -43,6 +43,12 @@ This walks you through three questions and saves your config locally. You only n
 Your API key is stored only on your machine using [`conf`](https://github.com/sindresorhus/conf) (a standard local config library). It is never sent anywhere except directly to `api.anthropic.com` when you run an analysis.
 
 ```
+An Anthropic API key is required to run analyses.
+Get one at: https://console.anthropic.com
+
+Your key is stored locally on this machine only.
+It is never sent anywhere except directly to api.anthropic.com when you run an analysis.
+
 Enter your Anthropic API key: sk-ant-...
 
 Your claude.ai plan:
