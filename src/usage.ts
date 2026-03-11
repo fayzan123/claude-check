@@ -101,7 +101,7 @@ async function fetchUsage(accessToken: string, debug = false): Promise<UsageSnap
         headers: {
           Authorization: `Bearer ${accessToken}`,
           'anthropic-beta': 'oauth-2025-04-20',
-          'User-Agent': 'claude-code/1.0.0',
+          'User-Agent': 'claude-code/1.1.0',
         },
       });
 
