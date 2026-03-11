@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { getCachedUsage, setCachedUsage, isUsageRateLimited, setUsageRateLimited } from './config.js';
 
 const CREDENTIALS_PATH = join(homedir(), '.claude', '.credentials.json');
 const KEYCHAIN_SERVICE = 'Claude Code-credentials';
@@ -92,45 +93,92 @@ async function refreshAccessToken(refreshToken: string): Promise<string | null> 
   }
 }
 
-async function fetchUsage(accessToken: string): Promise<UsageSnapshot | null> {
-  try {
-    const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'anthropic-beta': 'oauth-2025-04-20',
-      },
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as UsageResponse;
-    const toPercent = (v: number) => v > 1 ? Math.round(v) : Math.round(v * 100);
-    return {
-      sessionPct: toPercent(data.five_hour?.utilization ?? 0),
-      weeklyPct: toPercent(data.seven_day?.utilization ?? 0),
-      sessionResetsAt: data.five_hour?.resets_at,
-      weeklyResetsAt: data.seven_day?.resets_at,
-    };
-  } catch {
-    return null;
+async function fetchUsage(accessToken: string, debug = false): Promise<UsageSnapshot | null> {
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'anthropic-beta': 'oauth-2025-04-20',
+          'User-Agent': 'claude-code/1.0.0',
+        },
+      });
+
+      if (res.status === 429) {
+        if (attempt < MAX_ATTEMPTS - 1) {
+          if (debug) process.stderr.write(`[claude-check debug] usage fetch rate-limited (attempt ${attempt + 1}), retrying…\n`);
+          await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+          continue;
+        }
+        // All retries exhausted — set cooldown so next run skips the API call
+        if (debug) process.stderr.write('[claude-check debug] usage fetch rate-limited on all attempts, setting 1-min cooldown\n');
+        setUsageRateLimited();
+        return null;
+      }
+
+      if (!res.ok) {
+        if (debug) {
+          const body = await res.text().catch(() => '(unreadable)');
+          process.stderr.write(`[claude-check debug] usage fetch failed: HTTP ${res.status} — ${body}\n`);
+        }
+        return null;
+      }
+
+      const data = (await res.json()) as UsageResponse;
+      const toPercent = (v: number) => v > 1 ? Math.round(v) : Math.round(v * 100);
+      return {
+        sessionPct: toPercent(data.five_hour?.utilization ?? 0),
+        weeklyPct: toPercent(data.seven_day?.utilization ?? 0),
+        sessionResetsAt: data.five_hour?.resets_at,
+        weeklyResetsAt: data.seven_day?.resets_at,
+      };
+    } catch {
+      return null;
+    }
   }
+  return null;
 }
 
 /**
  * Attempts to read Claude Code OAuth credentials and fetch current usage.
  * Returns null silently if Claude Code is not installed or credentials are invalid.
  */
-export async function getAutoUsage(): Promise<UsageSnapshot | null> {
+export async function getAutoUsage(debug = false): Promise<UsageSnapshot | null> {
+  // Return cached value if fresh (avoids rate limits on repeated runs)
+  const cached = getCachedUsage();
+  if (cached) {
+    if (debug) process.stderr.write('[claude-check debug] using cached usage (< 5 min old)\n');
+    return cached;
+  }
+
+  // Skip API call if we were recently rate-limited (1-min cooldown)
+  if (isUsageRateLimited()) {
+    if (debug) process.stderr.write('[claude-check debug] usage API rate-limit cooldown active, skipping fetch\n');
+    return null;
+  }
+
   const creds = readClaudeCredentials();
-  if (!creds) return null;
+  if (!creds) {
+    if (debug) process.stderr.write('[claude-check debug] no Claude Code credentials found\n');
+    return null;
+  }
 
   const now = Date.now();
   let token = creds.accessToken;
 
   // Refresh if expired (with 60s buffer)
   if (creds.expiresAt - 60_000 < now) {
+    if (debug) process.stderr.write('[claude-check debug] token expired, attempting refresh\n');
     const refreshed = await refreshAccessToken(creds.refreshToken);
-    if (!refreshed) return null;
+    if (!refreshed) {
+      if (debug) process.stderr.write('[claude-check debug] token refresh failed\n');
+      return null;
+    }
     token = refreshed;
   }
 
-  return fetchUsage(token);
+  const snapshot = await fetchUsage(token, debug);
+  if (snapshot) setCachedUsage(snapshot);
+  return snapshot;
 }

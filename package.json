@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "test": "node --import tsx/esm --test src/__tests__/*.test.ts",
     "prepublishOnly": "npm run build"
   },
   "engines": {

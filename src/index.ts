@@ -43,6 +43,7 @@ program
   .option('--no-color', 'Plain text output, no terminal colours')
   .option('--model <model>', 'Override which Claude model to use for the analysis call')
   .option('--plan <plan>', 'Your claude.ai plan: pro, max5, max20, or a multiplier (e.g. 10). Saved for future runs.')
+  .option('--debug', 'Print diagnostic info about usage auto-fetch')
   .action(async (promptArg: string | undefined, opts: {
     limit?: string;
     breakdown?: boolean;
@@ -50,6 +51,7 @@ program
     color?: boolean;
     model?: string;
     plan?: string;
+    debug?: boolean;
   }) => {
     // --- Resolve prompt (arg or stdin pipe) ---
     let prompt = promptArg;
@@ -99,11 +101,22 @@ program
       }
     } else {
       // --- Auto-fetch claude.ai usage limit via Claude Code OAuth ---
-      const usage = await getAutoUsage();
+      const usage = await getAutoUsage(opts.debug);
       if (usage) {
         limitPct = 100 - usage.weeklyPct;
         sessionPct = usage.sessionPct;
         limitAutoFetched = true;
+      } else if (process.stdout.isTTY && !opts.json) {
+        // Auto-fetch unavailable — ask interactively so the verdict is never skipped
+        const rl = createInterface({ input: stdin, output: stdout });
+        const answer = await rl.question(
+          'How much of your weekly claude.ai limit is remaining? (% from claude.ai dashboard, or Enter to skip): '
+        );
+        rl.close();
+        const parsed = Number(answer.trim());
+        if (answer.trim() && Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) {
+          limitPct = parsed;
+        }
       }
     }
 
