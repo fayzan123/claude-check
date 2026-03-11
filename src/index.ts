@@ -5,10 +5,11 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import ora from 'ora';
 import Anthropic from '@anthropic-ai/sdk';
-import { getApiKey, setApiKey, getPlanMultiplier, setPlanMultiplier } from './config.js';
+import { getApiKey, setApiKey, getPlanMultiplier, setPlanMultiplier, getAnalysisModel, setAnalysisModel } from './config.js';
 import { getAutoUsage } from './usage.js';
 import { analysePrompt } from './analyse.js';
-import { renderResult } from './display.js';
+import { renderResult, computeVerdict } from './display.js';
+import { isPromptTruncated } from './prompts.js';
 
 const MAX_STDIN_BYTES = 1_000_000; // 1 MB — well beyond any reasonable prompt
 
@@ -85,18 +86,29 @@ program
       planMultiplier = getPlanMultiplier();
     }
 
-    // --- Auto-fetch claude.ai usage limit via Claude Code OAuth ---
+    // --- Validate --limit ---
     let limitPct: number | undefined;
     let limitAutoFetched = false;
+    let sessionPct: number | undefined;
+
     if (opts.limit !== undefined) {
       limitPct = Number(opts.limit);
+      if (!Number.isFinite(limitPct) || limitPct < 0 || limitPct > 100) {
+        console.error('--limit must be a number between 0 and 100 (e.g. --limit 20)');
+        process.exit(1);
+      }
     } else {
+      // --- Auto-fetch claude.ai usage limit via Claude Code OAuth ---
       const usage = await getAutoUsage();
       if (usage) {
         limitPct = 100 - usage.weeklyPct;
+        sessionPct = usage.sessionPct;
         limitAutoFetched = true;
       }
     }
+
+    // --- Check for prompt truncation ---
+    const truncated = isPromptTruncated(prompt);
 
     // --- Run analysis with spinner ---
     const spinner = opts.json || !process.stdout.isTTY
@@ -104,16 +116,32 @@ program
       : ora({ text: 'Analysing prompt…', color: 'cyan' }).start();
 
     try {
-      const result = await analysePrompt({ apiKey }, prompt, opts.model);
+      const result = await analysePrompt({ apiKey }, prompt, opts.model ?? getAnalysisModel());
       spinner?.stop();
 
       if (opts.json) {
-        console.log(JSON.stringify({ ...result, limit_pct: limitPct ?? null, plan_multiplier: planMultiplier }, null, 2));
+        const verdict = limitPct !== undefined
+          ? computeVerdict(limitPct, planMultiplier, result.recommended_model, sessionPct)
+          : null;
+        console.log(JSON.stringify({
+          ...result,
+          limit_pct: limitPct ?? null,
+          session_pct: sessionPct ?? null,
+          plan_multiplier: planMultiplier,
+          limit_auto_fetched: limitAutoFetched,
+          truncated,
+          verdict,
+        }, null, 2));
         return;
+      }
+
+      if (truncated) {
+        console.log('Note: prompt truncated to 2000 characters — analysis based on partial input.');
       }
 
       console.log(renderResult(result, {
         limitPct,
+        sessionPct,
         limitAutoFetched,
         planMultiplier,
         showBreakdown: opts.breakdown,
@@ -171,6 +199,13 @@ program
       process.exit(1);
     }
 
+    // Warn on unexpected key format (non-fatal)
+    if (!trimmed.startsWith('sk-ant-')) {
+      console.log();
+      console.log('Warning: this does not look like an Anthropic API key (expected prefix: sk-ant-...).');
+      console.log('Continuing — if incorrect, you will see an auth error when running analysis.');
+    }
+
     console.log();
     console.log('Your claude.ai plan:');
     console.log('  1. Pro (default)');
@@ -179,17 +214,55 @@ program
     console.log();
 
     const planInput = await rl.question('Enter plan [1]: ');
+
+    console.log();
+    console.log('Analysis model:');
+    console.log('  1. Haiku (default) — fast and cheap (~$0.001/run). Accurate for most prompts.');
+    console.log('  2. Sonnet — higher accuracy on complex or nuanced prompts (~$0.01/run).');
+    console.log('     Use this if you find Haiku verdicts are consistently off for your tasks.');
+    console.log('     You can also override per-run with --model.');
+    console.log();
+
+    const modelInput = await rl.question('Enter model [1]: ');
     rl.close();
+
+    // Validate the API key before saving
+    const validationSpinner = ora({ text: 'Validating API key…', color: 'cyan' }).start();
+    try {
+      const client = new Anthropic({ apiKey: trimmed });
+      await client.messages.create({
+        model: 'claude-haiku-4-5',
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'hi' }],
+      });
+      validationSpinner.succeed('API key valid.');
+    } catch (err) {
+      if (err instanceof Anthropic.AuthenticationError) {
+        validationSpinner.fail('Invalid API key — not saved.');
+        console.error('Get a valid key at: https://console.anthropic.com');
+        process.exit(1);
+      }
+      // Network errors: warn but still save (key may be valid)
+      validationSpinner.warn('Could not validate key (network error) — saving anyway.');
+    }
 
     const planChoice = planInput.trim() || '1';
     const planMap: Record<string, number> = { '1': 1, '2': 5, '3': 20, pro: 1, max5: 5, max20: 20 };
     const multiplier = planMap[planChoice.toLowerCase()] ?? 1;
     const planName: Record<number, string> = { 1: 'Pro', 5: 'Max 5x', 20: 'Max 20x' };
 
+    const modelChoice = modelInput.trim() || '1';
+    const analysisModel = modelChoice === '2' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5';
+    const modelName: Record<string, string> = {
+      'claude-haiku-4-5': 'Haiku (fast)',
+      'claude-sonnet-4-6': 'Sonnet (accurate)',
+    };
+
     setApiKey(trimmed);
     setPlanMultiplier(multiplier);
+    setAnalysisModel(analysisModel);
     console.log();
-    console.log(`API key saved. Plan set to: ${planName[multiplier] ?? `${multiplier}x`}.`);
+    console.log(`API key saved. Plan set to: ${planName[multiplier] ?? `${multiplier}x`}. Model set to: ${modelName[analysisModel]}.`);
     console.log('You can now use claude-check.');
   });
 

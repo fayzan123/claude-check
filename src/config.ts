@@ -27,3 +27,11 @@ export function getPlanMultiplier(): number {
 export function setPlanMultiplier(multiplier: number): void {
   config.set('planMultiplier', multiplier);
 }
+
+export function getAnalysisModel(): string {
+  return (config.get('analysisModel') as string | undefined) ?? 'claude-haiku-4-5';
+}
+
+export function setAnalysisModel(model: string): void {
+  config.set('analysisModel', model);
+}

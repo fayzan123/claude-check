@@ -1,13 +1,38 @@
 import chalk, { Chalk } from 'chalk';
 import boxen from 'boxen';
 import type { AnalysisResult } from './analyse.js';
+import { MODEL_THRESHOLD_BONUS } from './models.js';
 
 export interface DisplayOptions {
   limitPct?: number;
+  sessionPct?: number;      // % USED in the 5-hour window (0–100); auto-fetched only
   limitAutoFetched?: boolean;
   planMultiplier?: number;
   showBreakdown?: boolean;
   noColor?: boolean;
+}
+
+export type Verdict = 'safe' | 'caution' | 'do-not-start';
+
+/**
+ * Pure verdict computation — used by both renderResult and --json output.
+ * limitPct is remaining %; sessionPct is % used in the 5-hour window.
+ */
+export function computeVerdict(
+  limitPct: number,
+  planMultiplier: number,
+  recommendedModel: string,
+  sessionPct?: number,
+): Verdict {
+  const bonus = MODEL_THRESHOLD_BONUS[recommendedModel] ?? 0;
+  const weeklyEffective = limitPct * planMultiplier;
+  const sessionEffective = sessionPct !== undefined
+    ? (100 - sessionPct) * planMultiplier
+    : Infinity;
+  const effective = Math.min(weeklyEffective, sessionEffective);
+  if (effective >= 75 + bonus) return 'safe';
+  if (effective >= 40 + bonus) return 'caution';
+  return 'do-not-start';
 }
 
 const BOX_WIDTH = 56; // inner content width (matches spec example)
@@ -33,34 +58,34 @@ function planLabel(multiplier: number): string {
   return ` (${multiplier}x plan)`;
 }
 
-// Higher-tier models consume more subscription usage per message.
-// These bonuses raise the safe/caution thresholds accordingly.
-const MODEL_THRESHOLD_BONUS: Record<string, number> = {
-  'claude-haiku-4-5': 0,
-  'claude-sonnet-4-6': 10,
-  'claude-opus-4-6': 20,
-};
-
 function limitWarning(
   c: ChalkInstance,
-  pct: number,
+  limitPct: number,
   autoFetched: boolean,
   multiplier: number,
   recommendedModel: string,
+  sessionPct?: number,
 ): string[] {
-  const source = autoFetched ? 'from claude.ai' : 'remaining';
   const label = planLabel(multiplier);
-  // Normalize: plan multiplier scales up capacity; model bonus scales up thresholds
-  const effective = pct * multiplier;
-  const bonus = MODEL_THRESHOLD_BONUS[recommendedModel] ?? 0;
-  if (effective >= 75 + bonus) {
-    return [c.green(`✓  ${pct}% ${source}${label}: Safe to proceed`)];
+  const verdict = computeVerdict(limitPct, multiplier, recommendedModel, sessionPct);
+
+  let usageLine: string;
+  if (autoFetched && sessionPct !== undefined) {
+    const sessionRemaining = 100 - sessionPct;
+    usageLine = `${limitPct}% weekly · ${sessionRemaining}% session${label}`;
+  } else {
+    const source = autoFetched ? 'from claude.ai' : 'remaining';
+    usageLine = `${limitPct}% ${source}${label}`;
   }
-  if (effective >= 40 + bonus) {
-    return [c.yellow(`⚠  ${pct}% ${source}${label}: Proceed with caution`)];
+
+  if (verdict === 'safe') {
+    return [c.green(`✓  ${usageLine}: Safe to proceed`)];
+  }
+  if (verdict === 'caution') {
+    return [c.yellow(`⚠  ${usageLine}: Proceed with caution`)];
   }
   return [
-    c.red(`✗  ${pct}% ${source}${label}: Do not start`),
+    c.red(`✗  ${usageLine}: Do not start`),
     c.red('   Wait for your limit to reset before running this.'),
   ];
 }
@@ -68,52 +93,53 @@ function limitWarning(
 export function renderResult(result: AnalysisResult, opts: DisplayOptions = {}): string {
   const c = opts.noColor ? new Chalk({ level: 0 }) : chalk;
 
+  if (!(result.recommended_model in MODEL_THRESHOLD_BONUS)) {
+    process.stderr.write(
+      `Warning: recommended model "${result.recommended_model}" is not in the known model list — verdict thresholds may be inaccurate.\n`
+    );
+  }
+
   const lines: string[] = [];
 
-  // Complexity
-  lines.push(
-    `Complexity:        ${levelColor(c, result.complexity)}`
-  );
+  lines.push(`Complexity:        ${levelColor(c, result.complexity)}`);
+  lines.push(`Est. messages:     ${result.estimated_messages_min}–${result.estimated_messages_max}`);
 
-  // Estimated messages
-  lines.push(
-    `Est. messages:     ${result.estimated_messages_min}–${result.estimated_messages_max}`
-  );
-
-  // Interrupt risk — truncate reason so line stays within box width
   // "Interrupt risk:    HIGH — " = 26 chars, leaving ~30 for reason
   const riskReason = truncate(result.interrupt_risk_reason, BOX_WIDTH - 26);
-  lines.push(
-    `Interrupt risk:    ${levelColor(c, result.interrupt_risk)} — ${riskReason}`
-  );
+  lines.push(`Interrupt risk:    ${levelColor(c, result.interrupt_risk)} — ${riskReason}`);
 
   lines.push('');
 
-  // Model recommendation
-  lines.push(
-    `Recommended model: ${c.cyan(result.recommended_model)}`
-  );
+  lines.push(`Recommended model: ${c.cyan(result.recommended_model)}`);
   // "Reason:            " = 19 chars, leaving ~37 for reason
-  lines.push(
-    `Reason:            ${truncate(result.recommended_model_reason, BOX_WIDTH - 19)}`
-  );
+  lines.push(`Reason:            ${truncate(result.recommended_model_reason, BOX_WIDTH - 19)}`);
 
   // Limit warning
   if (opts.limitPct !== undefined) {
     lines.push('');
-    for (const line of limitWarning(c, opts.limitPct, opts.limitAutoFetched ?? false, opts.planMultiplier ?? 1, result.recommended_model)) {
+    for (const line of limitWarning(
+      c,
+      opts.limitPct,
+      opts.limitAutoFetched ?? false,
+      opts.planMultiplier ?? 1,
+      result.recommended_model,
+      opts.sessionPct,
+    )) {
       lines.push(line);
     }
   }
 
   // Breakdown — show for MEDIUM/HIGH, --breakdown flag, or when limit is in danger zone
   const modelBonus = MODEL_THRESHOLD_BONUS[result.recommended_model] ?? 0;
-  const limitIsLow = opts.limitPct !== undefined && (opts.limitPct * (opts.planMultiplier ?? 1)) < 40 + modelBonus;
+  const multiplier = opts.planMultiplier ?? 1;
+  const weeklyIsLow = opts.limitPct !== undefined && (opts.limitPct * multiplier) < 40 + modelBonus;
+  const sessionIsLow = opts.sessionPct !== undefined && ((100 - opts.sessionPct) * multiplier) < 40 + modelBonus;
   const showBreakdown =
     opts.showBreakdown ||
     result.complexity === 'MEDIUM' ||
     result.complexity === 'HIGH' ||
-    limitIsLow;
+    weeklyIsLow ||
+    sessionIsLow;
 
   if (showBreakdown && result.breakdown && result.breakdown.length > 0) {
     lines.push('');

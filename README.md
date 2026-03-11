@@ -181,7 +181,7 @@ Your plan is set during `claude-check setup` and remembered for all future runs.
 
 **Usage auto-fetch only works with Claude Code.** The automatic limit detection reads credentials written by the [Claude Code](https://claude.ai/code) CLI. If you don't have Claude Code installed, you'll need to pass `--limit <number>` manually. The usage percentage shown reflects your claude.ai subscription, which is a different limit from your Anthropic API usage.
 
-**Long prompts are truncated.** Prompts over 2000 characters are cut before being sent for analysis. The tool only needs to understand the *kind* of task, not every detail, so this rarely affects accuracy — but for extremely long, context-heavy prompts, the analysis may miss nuance in the truncated portion.
+**Very long prompts are truncated.** Prompts over 20,000 characters are cut before being sent for analysis. In practice this limit is never hit by a normal claude.ai prompt — it exists only as a guard against accidentally piping a large file or codebase. A truncation notice is shown in the output when this occurs.
 
 **Model cost weights are estimates.** The plan/model verdict logic uses approximate relative costs for Haiku, Sonnet, and Opus on the claude.ai subscription. Anthropic does not publish exact internal usage ratios, so the thresholds are calibrated conservatively rather than precisely.
 
