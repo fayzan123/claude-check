@@ -1,0 +1,42 @@
+{
+  "name": "claude-check",
+  "version": "1.0.0",
+  "description": "Analyse a prompt before sending it to Claude — estimates complexity, cost, and recommends the best model.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "claude-check": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "claude",
+    "anthropic",
+    "cli",
+    "prompt",
+    "analysis"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "boxen": "^8.0.1",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "conf": "^13.1.0",
+    "ora": "^8.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.2"
+  }
+}
