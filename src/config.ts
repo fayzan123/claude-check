@@ -19,3 +19,11 @@ export function getAuthToken(): string | undefined {
 export function setAuthToken(token: string): void {
   config.set('authToken', token);
 }
+
+export function getPlanMultiplier(): number {
+  return (config.get('planMultiplier') as number | undefined) ?? 1;
+}
+
+export function setPlanMultiplier(multiplier: number): void {
+  config.set('planMultiplier', multiplier);
+}

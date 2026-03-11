@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -30,7 +30,6 @@ export interface UsageSnapshot {
   weeklyPct: number;
   sessionResetsAt?: string;
   weeklyResetsAt?: string;
-  accessToken: string;
 }
 
 function parseCredentialJson(raw: string): ClaudeCredentials | null {
@@ -54,8 +53,9 @@ export function readClaudeCredentials(): ClaudeCredentials | null {
   // 1. Try macOS Keychain (used by Claude Code on macOS)
   if (process.platform === 'darwin') {
     try {
-      const raw = execSync(
-        `security find-generic-password -s "${KEYCHAIN_SERVICE}" -w`,
+      const raw = execFileSync(
+        'security',
+        ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'],
         { stdio: ['pipe', 'pipe', 'pipe'] }
       ).toString().trim();
       return parseCredentialJson(raw);
@@ -108,7 +108,6 @@ async function fetchUsage(accessToken: string): Promise<UsageSnapshot | null> {
       weeklyPct: toPercent(data.seven_day?.utilization ?? 0),
       sessionResetsAt: data.five_hour?.resets_at,
       weeklyResetsAt: data.seven_day?.resets_at,
-      accessToken,
     };
   } catch {
     return null;

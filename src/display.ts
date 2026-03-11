@@ -5,6 +5,7 @@ import type { AnalysisResult } from './analyse.js';
 export interface DisplayOptions {
   limitPct?: number;
   limitAutoFetched?: boolean;
+  planMultiplier?: number;
   showBreakdown?: boolean;
   noColor?: boolean;
 }
@@ -25,16 +26,26 @@ function levelColor(c: ChalkInstance, level: Level): string {
   return c.red(level);
 }
 
-function limitWarning(c: ChalkInstance, pct: number, autoFetched: boolean): string[] {
+function planLabel(multiplier: number): string {
+  if (multiplier <= 1) return '';
+  if (multiplier === 5) return ' (Max 5x)';
+  if (multiplier === 20) return ' (Max 20x)';
+  return ` (${multiplier}x plan)`;
+}
+
+function limitWarning(c: ChalkInstance, pct: number, autoFetched: boolean, multiplier: number): string[] {
   const source = autoFetched ? 'from claude.ai' : 'remaining';
-  if (pct >= 75) {
-    return [c.green(`✓  ${pct}% ${source}: Safe to proceed`)];
+  const label = planLabel(multiplier);
+  // Normalize against Pro baseline: higher-tier plans have proportionally more absolute capacity
+  const effective = pct * multiplier;
+  if (effective >= 75) {
+    return [c.green(`✓  ${pct}% ${source}${label}: Safe to proceed`)];
   }
-  if (pct >= 40) {
-    return [c.yellow(`⚠  ${pct}% ${source}: Proceed with caution`)];
+  if (effective >= 40) {
+    return [c.yellow(`⚠  ${pct}% ${source}${label}: Proceed with caution`)];
   }
   return [
-    c.red(`✗  ${pct}% ${source}: Do not start`),
+    c.red(`✗  ${pct}% ${source}${label}: Do not start`),
     c.red('   Wait for your limit to reset before running this.'),
   ];
 }
@@ -75,13 +86,13 @@ export function renderResult(result: AnalysisResult, opts: DisplayOptions = {}):
   // Limit warning
   if (opts.limitPct !== undefined) {
     lines.push('');
-    for (const line of limitWarning(c, opts.limitPct, opts.limitAutoFetched ?? false)) {
+    for (const line of limitWarning(c, opts.limitPct, opts.limitAutoFetched ?? false, opts.planMultiplier ?? 1)) {
       lines.push(line);
     }
   }
 
   // Breakdown — show for MEDIUM/HIGH, --breakdown flag, or when limit is in danger zone
-  const limitIsLow = opts.limitPct !== undefined && opts.limitPct < 40;
+  const limitIsLow = opts.limitPct !== undefined && (opts.limitPct * (opts.planMultiplier ?? 1)) < 40;
   const showBreakdown =
     opts.showBreakdown ||
     result.complexity === 'MEDIUM' ||

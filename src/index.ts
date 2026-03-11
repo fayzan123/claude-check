@@ -5,16 +5,24 @@ import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import ora from 'ora';
 import Anthropic from '@anthropic-ai/sdk';
-import { getApiKey, setApiKey } from './config.js';
+import { getApiKey, setApiKey, getPlanMultiplier, setPlanMultiplier } from './config.js';
 import { getAutoUsage } from './usage.js';
 import { analysePrompt } from './analyse.js';
 import { renderResult } from './display.js';
 
+const MAX_STDIN_BYTES = 1_000_000; // 1 MB — well beyond any reasonable prompt
+
 async function readStdin(): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let data = '';
     stdin.setEncoding('utf8');
-    stdin.on('data', (chunk) => { data += chunk; });
+    stdin.on('data', (chunk) => {
+      data += chunk;
+      if (Buffer.byteLength(data) > MAX_STDIN_BYTES) {
+        stdin.destroy();
+        reject(new Error(`Input exceeds maximum size of ${MAX_STDIN_BYTES} bytes.`));
+      }
+    });
     stdin.on('end', () => resolve(data.trim()));
   });
 }
@@ -33,12 +41,14 @@ program
   .option('--json', 'Output raw JSON instead of formatted terminal output')
   .option('--no-color', 'Plain text output, no terminal colours')
   .option('--model <model>', 'Override which Claude model to use for the analysis call')
+  .option('--plan <plan>', 'Your claude.ai plan: pro, max5, max20, or a multiplier (e.g. 10). Saved for future runs.')
   .action(async (promptArg: string | undefined, opts: {
     limit?: string;
     breakdown?: boolean;
     json?: boolean;
     color?: boolean;
     model?: string;
+    plan?: string;
   }) => {
     // --- Resolve prompt (arg or stdin pipe) ---
     let prompt = promptArg;
@@ -64,6 +74,17 @@ program
       process.exit(1);
     }
 
+    // --- Resolve plan multiplier ---
+    let planMultiplier: number;
+    if (opts.plan !== undefined) {
+      const named: Record<string, number> = { pro: 1, max5: 5, max20: 20 };
+      const n = Number(opts.plan);
+      planMultiplier = named[opts.plan] ?? (Number.isInteger(n) && n >= 1 ? n : 1);
+      setPlanMultiplier(planMultiplier); // persist for future runs
+    } else {
+      planMultiplier = getPlanMultiplier();
+    }
+
     // --- Auto-fetch claude.ai usage limit via Claude Code OAuth ---
     let limitPct: number | undefined;
     let limitAutoFetched = false;
@@ -87,13 +108,14 @@ program
       spinner?.stop();
 
       if (opts.json) {
-        console.log(JSON.stringify({ ...result, limit_pct: limitPct ?? null }, null, 2));
+        console.log(JSON.stringify({ ...result, limit_pct: limitPct ?? null, plan_multiplier: planMultiplier }, null, 2));
         return;
       }
 
       console.log(renderResult(result, {
         limitPct,
         limitAutoFetched,
+        planMultiplier,
         showBreakdown: opts.breakdown,
         noColor: !opts.color,
       }));
