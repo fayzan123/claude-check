@@ -144,7 +144,7 @@ program
 
 program
   .command('setup')
-  .description('Configure your Anthropic API key')
+  .description('Configure your Anthropic API key and claude.ai plan')
   .action(async () => {
     console.log();
 
@@ -163,17 +163,34 @@ program
     console.log();
 
     const key = await rl.question('Enter your Anthropic API key: ');
-    rl.close();
 
     const trimmed = key.trim();
     if (!trimmed) {
+      rl.close();
       console.log('No key provided. Setup cancelled.');
       process.exit(1);
     }
 
-    setApiKey(trimmed);
     console.log();
-    console.log('API key saved successfully! You can now use claude-check.');
+    console.log('Your claude.ai plan:');
+    console.log('  1. Pro (default)');
+    console.log('  2. Max 5x');
+    console.log('  3. Max 20x');
+    console.log();
+
+    const planInput = await rl.question('Enter plan [1]: ');
+    rl.close();
+
+    const planChoice = planInput.trim() || '1';
+    const planMap: Record<string, number> = { '1': 1, '2': 5, '3': 20, pro: 1, max5: 5, max20: 20 };
+    const multiplier = planMap[planChoice.toLowerCase()] ?? 1;
+    const planName: Record<number, string> = { 1: 'Pro', 5: 'Max 5x', 20: 'Max 20x' };
+
+    setApiKey(trimmed);
+    setPlanMultiplier(multiplier);
+    console.log();
+    console.log(`API key saved. Plan set to: ${planName[multiplier] ?? `${multiplier}x`}.`);
+    console.log('You can now use claude-check.');
   });
 
 program.parse();

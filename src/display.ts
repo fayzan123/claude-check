@@ -33,15 +33,30 @@ function planLabel(multiplier: number): string {
   return ` (${multiplier}x plan)`;
 }
 
-function limitWarning(c: ChalkInstance, pct: number, autoFetched: boolean, multiplier: number): string[] {
+// Higher-tier models consume more subscription usage per message.
+// These bonuses raise the safe/caution thresholds accordingly.
+const MODEL_THRESHOLD_BONUS: Record<string, number> = {
+  'claude-haiku-4-5': 0,
+  'claude-sonnet-4-6': 10,
+  'claude-opus-4-6': 20,
+};
+
+function limitWarning(
+  c: ChalkInstance,
+  pct: number,
+  autoFetched: boolean,
+  multiplier: number,
+  recommendedModel: string,
+): string[] {
   const source = autoFetched ? 'from claude.ai' : 'remaining';
   const label = planLabel(multiplier);
-  // Normalize against Pro baseline: higher-tier plans have proportionally more absolute capacity
+  // Normalize: plan multiplier scales up capacity; model bonus scales up thresholds
   const effective = pct * multiplier;
-  if (effective >= 75) {
+  const bonus = MODEL_THRESHOLD_BONUS[recommendedModel] ?? 0;
+  if (effective >= 75 + bonus) {
     return [c.green(`✓  ${pct}% ${source}${label}: Safe to proceed`)];
   }
-  if (effective >= 40) {
+  if (effective >= 40 + bonus) {
     return [c.yellow(`⚠  ${pct}% ${source}${label}: Proceed with caution`)];
   }
   return [
@@ -86,13 +101,14 @@ export function renderResult(result: AnalysisResult, opts: DisplayOptions = {}):
   // Limit warning
   if (opts.limitPct !== undefined) {
     lines.push('');
-    for (const line of limitWarning(c, opts.limitPct, opts.limitAutoFetched ?? false, opts.planMultiplier ?? 1)) {
+    for (const line of limitWarning(c, opts.limitPct, opts.limitAutoFetched ?? false, opts.planMultiplier ?? 1, result.recommended_model)) {
       lines.push(line);
     }
   }
 
   // Breakdown — show for MEDIUM/HIGH, --breakdown flag, or when limit is in danger zone
-  const limitIsLow = opts.limitPct !== undefined && (opts.limitPct * (opts.planMultiplier ?? 1)) < 40;
+  const modelBonus = MODEL_THRESHOLD_BONUS[result.recommended_model] ?? 0;
+  const limitIsLow = opts.limitPct !== undefined && (opts.limitPct * (opts.planMultiplier ?? 1)) < 40 + modelBonus;
   const showBreakdown =
     opts.showBreakdown ||
     result.complexity === 'MEDIUM' ||

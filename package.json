@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "claude-check": "./dist/index.js"
+    "claude-check": "dist/index.js"
   },
   "files": [
     "dist"
@@ -24,8 +24,13 @@
     "prompt",
     "analysis"
   ],
-  "author": "",
+  "author": "Fayzan Malik <fayzanm786@gmail.com>",
   "license": "MIT",
+  "homepage": "https://github.com/fayzan123/claude-check",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fayzan123/claude-check.git"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "boxen": "^8.0.1",
