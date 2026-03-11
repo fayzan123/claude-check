@@ -35,7 +35,7 @@ program
   .description(
     'Analyse a prompt before sending it to Claude — estimates complexity, cost, and recommends the best model.'
   )
-  .version('1.1.1')
+  .version('1.1.2')
   .argument('[prompt]', 'The prompt to analyse')
   .option('--limit <number>', 'Your remaining usage limit as a percentage (e.g. --limit 20)')
   .option('--breakdown', 'Always show task breakdown suggestions, even for LOW complexity')
@@ -201,6 +201,9 @@ program
 
     console.log('An Anthropic API key is required to run analyses.');
     console.log('Get one at: https://console.anthropic.com');
+    console.log();
+    console.log('Your key is stored locally on this machine only.');
+    console.log('It is never sent anywhere except directly to api.anthropic.com when you run an analysis.');
     console.log();
 
     const key = await rl.question('Enter your Anthropic API key: ');
