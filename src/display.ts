@@ -17,7 +17,14 @@ export type Verdict = 'safe' | 'caution' | 'do-not-start';
 /**
  * Pure verdict computation — used by both renderResult and --json output.
  * limitPct is remaining %; sessionPct is % used in the 5-hour window.
+ *
+ * Session limits are smaller in absolute terms than weekly limits, so a task
+ * consumes a larger fraction of the session budget than the weekly budget.
+ * We apply SESSION_PENALTY points extra required headroom on the session window
+ * to account for this scale difference.
  */
+const SESSION_PENALTY = 15;
+
 export function computeVerdict(
   limitPct: number,
   planMultiplier: number,
@@ -27,7 +34,7 @@ export function computeVerdict(
   const bonus = MODEL_THRESHOLD_BONUS[recommendedModel] ?? 0;
   const weeklyEffective = limitPct * planMultiplier;
   const sessionEffective = sessionPct !== undefined
-    ? (100 - sessionPct) * planMultiplier
+    ? Math.max(0, (100 - sessionPct) - SESSION_PENALTY) * planMultiplier
     : Infinity;
   const effective = Math.min(weeklyEffective, sessionEffective);
   if (effective >= 75 + bonus) return 'safe';
@@ -119,15 +126,14 @@ export function renderResult(result: AnalysisResult, opts: DisplayOptions = {}):
     }
   }
 
-  // Breakdown — show when verdict is do-not-start, or --breakdown flag is set
+  // Breakdown — only show for MEDIUM/HIGH complexity tasks when verdict is do-not-start
   const verdictResult = opts.limitPct !== undefined
     ? computeVerdict(opts.limitPct, opts.planMultiplier ?? 1, result.recommended_model, opts.sessionPct)
     : null;
+  const isComplexEnough = result.complexity === 'MEDIUM' || result.complexity === 'HIGH';
   const showBreakdown =
     opts.showBreakdown ||
-    verdictResult === 'do-not-start' ||
-    result.complexity === 'MEDIUM' ||
-    result.complexity === 'HIGH';
+    (verdictResult === 'do-not-start' && isComplexEnough);
 
   if (showBreakdown && result.breakdown && result.breakdown.length > 0) {
     lines.push('');
