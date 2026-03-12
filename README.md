@@ -106,24 +106,24 @@ claude-check --json "summarise this document"
 ## Example output
 
 ```
-╭─ claude-check ───────────────────────────────────────────────╮
-│                                                               │
-│  Complexity:        HIGH                                      │
-│  Est. messages:     6–10                                      │
-│  Interrupt risk:    HIGH — partial refactor = broken code     │
-│                                                               │
-│  Recommended model: claude-sonnet-4-6                         │
-│  Reason:            Multi-file code task needs reasoning      │
-│                                                               │
-│  ✗  18% from claude.ai (Max 5x): Do not start                 │
-│     Wait for your limit to reset before running this.         │
-│                                                               │
-│  Safer breakdown:                                             │
-│    1. Rename files and update imports first                   │
-│    2. Add TypeScript types file by file                       │
-│    3. Write tests as a separate task                          │
-│                                                               │
-╰───────────────────────────────────────────────────────────────╯
+╭─ claude-check ───────────────────────────────────────────────────────────╮
+│                                                                           │
+│  Complexity:        HIGH                                                  │
+│  Est. messages:     6–10                                                  │
+│  Interrupt risk:    HIGH — partial refactor = broken code                 │
+│                                                                           │
+│  Recommended model: claude-sonnet-4-6                                     │
+│  Reason:            Multi-file code task needs reasoning                  │
+│                                                                           │
+│  ✗  18% weekly · 12% session (Max 5x): Do not start                      │
+│     Wait for your limit to reset before running this.                     │
+│                                                                           │
+│  Safer breakdown:                                                         │
+│    1. Rename files and update imports first                               │
+│    2. Add TypeScript types file by file                                   │
+│    3. Write tests as a separate task                                      │
+│                                                                           │
+╰───────────────────────────────────────────────────────────────────────────╯
 ```
 
 ---
@@ -134,10 +134,11 @@ claude-check --json "summarise this document"
 |------|-------------|
 | `--limit <number>` | Your remaining claude.ai usage as a percentage (e.g. `--limit 20`). Auto-fetched if Claude Code is installed. |
 | `--plan <plan>` | Your claude.ai plan: `pro`, `max5`, `max20`, or a numeric multiplier (e.g. `10`). Saved for future runs. |
-| `--breakdown` | Always show task breakdown suggestions, even for LOW complexity |
+| `--breakdown` | Always show the safer breakdown, even when the verdict is not `do-not-start` |
 | `--json` | Output raw JSON instead of formatted terminal output |
 | `--no-color` | Plain text output, no terminal colours |
 | `--model <model>` | Override which Claude model is used for the analysis call (default: `claude-haiku-4-5`) |
+| `--debug` | Print diagnostic info about usage auto-fetch (credentials found, HTTP status, cache hits) |
 
 ---
 
@@ -179,11 +180,14 @@ Your usage percentage is shown on your [claude.ai](https://claude.ai) dashboard.
 
 ## How the verdict works
 
-The safe/caution/do-not-start verdict accounts for three factors:
+The safe/caution/do-not-start verdict accounts for four factors:
 
-1. **Your remaining %** — raw usage left on your plan
-2. **Your plan tier** — a Max 20x user at 20% remaining has far more absolute capacity than a Pro user at 20%
-3. **The recommended model** — Opus tasks consume more of your limit per message than Haiku tasks, so the threshold adjusts accordingly
+1. **Your weekly remaining %** — raw usage left on your 7-day plan window
+2. **Your session remaining %** — usage left in the current 5-hour window (fetched automatically if Claude Code is installed). Session limits are smaller in absolute terms, so the verdict applies stricter thresholds here — a task that uses 20% of your weekly budget uses a much larger fraction of your session budget
+3. **Your plan tier** — a Max 20x user at 20% remaining has far more absolute capacity than a Pro user at 20%
+4. **The recommended model** — Opus tasks consume more of your limit per message than Haiku tasks, so the threshold adjusts accordingly
+
+The verdict uses the more conservative of your weekly and session constraints. If either window is close to exhausted, you'll get a `do-not-start` even if the other window looks healthy.
 
 Your plan is set during `claude-check setup` and remembered for all future runs. You can override it for a single run with `--plan max5` (or `max20`, `pro`).
 
