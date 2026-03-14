@@ -10,6 +10,7 @@ import { getAutoUsage } from './usage.js';
 import { analysePrompt } from './analyse.js';
 import { renderResult, computeVerdict } from './display.js';
 import { isPromptTruncated } from './prompts.js';
+import { readSessionContext, applySessionModifiers } from './session.js';
 
 const MAX_STDIN_BYTES = 1_000_000; // 1 MB — well beyond any reasonable prompt
 
@@ -35,7 +36,7 @@ program
   .description(
     'Analyse a prompt before sending it to Claude — estimates complexity, cost, and recommends the best model.'
   )
-  .version('1.1.2')
+  .version('1.2.0')
   .argument('[prompt]', 'The prompt to analyse')
   .option('--limit <number>', 'Your remaining usage limit as a percentage (e.g. --limit 20)')
   .option('--breakdown', 'Always show task breakdown suggestions, even for LOW complexity')
@@ -123,19 +124,32 @@ program
     // --- Check for prompt truncation ---
     const truncated = isPromptTruncated(prompt);
 
+    // --- Read session context (fast, no network; done before spinner) ---
+    const sessionCtx = await Promise.race([
+      readSessionContext(undefined, opts.debug),
+      new Promise<Awaited<ReturnType<typeof readSessionContext>>>(resolve =>
+        setTimeout(() => resolve({ available: false, turnCount: 0, distinctFilesTouched: 0, priorTaskInterrupted: false, compactCount: 0, modelsUsed: [], sessionAgeHours: 0, sessionId: '' }), 500)
+      ),
+    ]);
+
     // --- Run analysis with spinner ---
     const spinner = opts.json || !process.stdout.isTTY
       ? null
       : ora({ text: 'Analysing prompt…', color: 'cyan' }).start();
 
     try {
-      const result = await analysePrompt({ apiKey }, prompt, opts.model ?? getAnalysisModel());
+      const rawResult = await analysePrompt({ apiKey }, prompt, opts.model ?? getAnalysisModel());
+      const result = applySessionModifiers(rawResult, sessionCtx);
       spinner?.stop();
 
       if (opts.json) {
         const verdict = limitPct !== undefined
           ? computeVerdict(limitPct, planMultiplier, result.recommended_model, sessionPct)
           : null;
+        const sessionModified =
+          result.estimated_messages_min !== rawResult.estimated_messages_min ||
+          result.estimated_messages_max !== rawResult.estimated_messages_max ||
+          result.interrupt_risk !== rawResult.interrupt_risk;
         console.log(JSON.stringify({
           ...result,
           limit_pct: limitPct ?? null,
@@ -144,6 +158,15 @@ program
           limit_auto_fetched: limitAutoFetched,
           truncated,
           verdict,
+          session_context: sessionCtx.available ? {
+            available: true,
+            turn_count: sessionCtx.turnCount,
+            distinct_files_touched: sessionCtx.distinctFilesTouched,
+            prior_task_interrupted: sessionCtx.priorTaskInterrupted,
+            compact_count: sessionCtx.compactCount,
+            session_age_hours: Math.round(sessionCtx.sessionAgeHours * 10) / 10,
+          } : null,
+          session_modified: sessionModified,
         }, null, 2));
         return;
       }
@@ -159,6 +182,7 @@ program
         planMultiplier,
         showBreakdown: opts.breakdown,
         noColor: !opts.color,
+        sessionContext: sessionCtx,
       }));
     } catch (err) {
       spinner?.stop();

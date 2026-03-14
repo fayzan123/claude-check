@@ -2,6 +2,7 @@ import chalk, { Chalk } from 'chalk';
 import boxen from 'boxen';
 import type { AnalysisResult } from './analyse.js';
 import { MODEL_THRESHOLD_BONUS } from './models.js';
+import type { SessionContext } from './session.js';
 
 export interface DisplayOptions {
   limitPct?: number;
@@ -10,6 +11,7 @@ export interface DisplayOptions {
   planMultiplier?: number;
   showBreakdown?: boolean;
   noColor?: boolean;
+  sessionContext?: SessionContext;
 }
 
 export type Verdict = 'safe' | 'caution' | 'do-not-start';
@@ -105,6 +107,12 @@ export function renderResult(result: AnalysisResult, opts: DisplayOptions = {}):
   lines.push(`Est. messages:     ${result.estimated_messages_min}–${result.estimated_messages_max}`);
 
   lines.push(`Interrupt risk:    ${levelColor(c, result.interrupt_risk)} — ${result.interrupt_risk_reason}`);
+
+  // Session context line — only shown when session data is available
+  if (opts.sessionContext?.available) {
+    const sc = opts.sessionContext;
+    lines.push(`Session context:   Turn ${sc.turnCount} · ${sc.distinctFilesTouched} files · ${sc.compactCount} compacts`);
+  }
 
   lines.push('');
 
