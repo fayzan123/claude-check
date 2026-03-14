@@ -64,7 +64,7 @@ export const SESSION_MODIFIER_CONFIG = {
 // Detection
 // ---------------------------------------------------------------------------
 
-const SESSION_STALE_MS = 2 * 60 * 60 * 1000; // 2 hours
+const SESSION_STALE_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 export function detectClaudeCodeSession(cwd?: string): boolean {
   // Prefer the env var when available (set by Claude Code in its own subprocesses)
@@ -272,7 +272,7 @@ function readFileChunk(filePath: string, offset: number, length: number): string
     try { closeSync(fd); } catch { /* ignore */ }
     return '';
   }
-  return buf.slice(0, bytesRead).toString('utf8');
+  return buf.subarray(0, bytesRead).toString('utf8');
 }
 
 /**
@@ -296,7 +296,9 @@ function scanCompactCount(filePath: string): number {
         const nl = text.indexOf('\n', pos);
         const end = nl >= 0 ? nl : text.length;
         const line = text.slice(pos, end);
-        if (line.includes('"compact_boundary"')) count++;
+        // Match the JSON key-value pair specifically to avoid false-positives
+        // from user/assistant messages that mention "compact_boundary" as text.
+        if (line.includes('"subtype":"compact_boundary"')) count++;
         pos = end + 1;
       }
     } catch {
