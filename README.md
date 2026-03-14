@@ -109,8 +109,9 @@ claude-check --json "summarise this document"
 ╭─ claude-check ───────────────────────────────────────────────────────────╮
 │                                                                           │
 │  Complexity:        HIGH                                                  │
-│  Est. messages:     6–10                                                  │
+│  Est. messages:     8–12                                                  │
 │  Interrupt risk:    HIGH — partial refactor = broken code                 │
+│  Session context:   Turn 32 · 18 files · 1 compact                       │
 │                                                                           │
 │  Recommended model: claude-sonnet-4-6                                     │
 │  Reason:            Multi-file code task needs reasoning                  │
@@ -190,6 +191,43 @@ The safe/caution/do-not-start verdict accounts for four factors:
 The verdict uses the more conservative of your weekly and session constraints. If either window is close to exhausted, you'll get a `do-not-start` even if the other window looks healthy.
 
 Your plan is set during `claude-check setup` and remembered for all future runs. You can override it for a single run with `--plan max5` (or `max20`, `pro`).
+
+---
+
+## Session context awareness
+
+When Claude Code is open in the same project directory, `claude-check` reads your active session to make the complexity estimate more accurate. A prompt like "now add tests for all of that" means something completely different at turn 2 of a fresh session versus turn 30 of a session where 20 files have already been modified.
+
+### What it reads
+
+Claude Code stores every session as a log file at `~/.claude/projects/{your-project}/`. `claude-check` reads the most recently active session for the current directory and extracts three signals:
+
+| Signal | What it measures |
+|--------|-----------------|
+| **Turn count** | How many real prompts you've sent in this session (tool call results don't count) |
+| **Distinct files touched** | How many unique files have been modified via Claude Code in this session |
+| **Compact count** | How many times `/compact` has been run — each compact signals the session was long and heavy enough to require a history summary |
+
+### How it affects the verdict
+
+These signals apply post-analysis modifiers to the API result:
+
+- High turn count → message estimate increases; interrupt risk escalates
+- Many files touched → same escalation (broad surface area = more messages to complete safely)
+- Compact events → boost to effective turn count (1 compact ≈ 20 turns of erased history; 2+ ≈ 40)
+- Prior task interrupted → interrupt risk escalates specifically
+
+Modifiers only escalate — they never lower a rating the API already returned. If the prompt is genuinely simple, a high turn count will push interrupt risk up but won't invent complexity that isn't there.
+
+### How detection works
+
+`claude-check` checks whether a session file for the current directory was modified within the last 4 hours. If yes, it reads and uses the session. If not (Claude Code is closed or you're in a different project), session context is silently skipped and the output is identical to a run without session data — **zero regression for users without Claude Code**.
+
+### Known limitations
+
+- **Turn and file counts reflect only the most recent activity.** For very large sessions (>500 KB of log data), only the tail is read. In practice, the compact count compensates: a session large enough to truncate the tail will have had at least one compact event, which already triggers aggressive escalation.
+- **Session context is per-project-directory.** It only activates when you run `claude-check` from the same directory Claude Code is open in.
+- **No context from other AI tools.** Only Claude Code sessions are read. Cursor, Copilot, and other editors are not detected.
 
 ---
 
