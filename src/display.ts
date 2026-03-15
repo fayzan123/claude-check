@@ -12,6 +12,7 @@ export interface DisplayOptions {
   showBreakdown?: boolean;
   noColor?: boolean;
   sessionContext?: SessionContext;
+  sessionModified?: boolean;
 }
 
 export type Verdict = 'safe' | 'caution' | 'do-not-start';
@@ -106,7 +107,10 @@ export function renderResult(result: AnalysisResult, opts: DisplayOptions = {}):
   lines.push(`Complexity:        ${levelColor(c, result.complexity)}`);
   lines.push(`Est. messages:     ${result.estimated_messages_min}–${result.estimated_messages_max}`);
 
-  lines.push(`Interrupt risk:    ${levelColor(c, result.interrupt_risk)} — ${result.interrupt_risk_reason}`);
+  const riskReason = (opts.sessionModified && result.complexity === 'LOW' && result.interrupt_risk === 'HIGH')
+    ? `${result.interrupt_risk_reason} (elevated by active session)`
+    : result.interrupt_risk_reason;
+  lines.push(`Interrupt risk:    ${levelColor(c, result.interrupt_risk)} — ${riskReason}`);
 
   // Session context line — only shown when session data is available
   if (opts.sessionContext?.available) {
@@ -118,6 +122,10 @@ export function renderResult(result: AnalysisResult, opts: DisplayOptions = {}):
 
   lines.push(`Recommended model: ${c.cyan(result.recommended_model)}`);
   lines.push(`Reason:            ${result.recommended_model_reason}`);
+
+  const verdictResult = opts.limitPct !== undefined
+    ? computeVerdict(opts.limitPct, opts.planMultiplier ?? 1, result.recommended_model, opts.sessionPct)
+    : null;
 
   // Limit warning
   if (opts.limitPct !== undefined) {
@@ -134,10 +142,12 @@ export function renderResult(result: AnalysisResult, opts: DisplayOptions = {}):
     }
   }
 
+  // When verdict is safe but interrupt risk is HIGH, add a bridging explanation
+  if (opts.limitPct !== undefined && verdictResult === 'safe' && result.interrupt_risk === 'HIGH') {
+    lines.push(c.yellow('   Safe to start, but HIGH interrupt risk — consider the breakdown below.'));
+  }
+
   // Breakdown — only show for MEDIUM/HIGH complexity tasks when verdict is do-not-start
-  const verdictResult = opts.limitPct !== undefined
-    ? computeVerdict(opts.limitPct, opts.planMultiplier ?? 1, result.recommended_model, opts.sessionPct)
-    : null;
   const isComplexEnough = result.complexity === 'MEDIUM' || result.complexity === 'HIGH';
   const showBreakdown =
     opts.showBreakdown ||

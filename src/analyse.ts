@@ -27,7 +27,8 @@ function isTransientError(err: unknown): boolean {
 export async function analysePrompt(
   auth: AuthOptions | string,
   userPrompt: string,
-  modelOverride?: string
+  modelOverride?: string,
+  planMultiplier?: number
 ): Promise<AnalysisResult> {
   // Accept legacy string (apiKey) or new AuthOptions object
   const opts: AuthOptions = typeof auth === 'string' ? { apiKey: auth } : auth;
@@ -35,7 +36,7 @@ export async function analysePrompt(
     opts.authToken ? { authToken: opts.authToken } : { apiKey: opts.apiKey }
   );
 
-  const metaPrompt = buildMetaPrompt(userPrompt);
+  const metaPrompt = buildMetaPrompt(userPrompt, planMultiplier);
 
   const MAX_ATTEMPTS = 3;
   let lastError: unknown;
