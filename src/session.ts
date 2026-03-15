@@ -522,7 +522,7 @@ export function applySessionModifiers(
       parts.push(`${session.distinctFilesTouched} files in play`);
     }
     if (parts.length > 0) {
-      newRiskReason = `${parts.join(', ')} — usage budget already committed`;
+      newRiskReason = `${parts.join(', ')} — deep session, interruption recovery is costly`;
     }
   }
 

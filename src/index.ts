@@ -36,7 +36,7 @@ program
   .description(
     'Analyse a prompt before sending it to Claude — estimates complexity, cost, and recommends the best model.'
   )
-  .version('1.2.0')
+  .version('1.3.0')
   .argument('[prompt]', 'The prompt to analyse')
   .option('--limit <number>', 'Your remaining usage limit as a percentage (e.g. --limit 20)')
   .option('--breakdown', 'Always show task breakdown suggestions, even for LOW complexity')
@@ -138,7 +138,7 @@ program
       : ora({ text: 'Analysing prompt…', color: 'cyan' }).start();
 
     try {
-      const rawResult = await analysePrompt({ apiKey }, prompt, opts.model ?? getAnalysisModel());
+      const rawResult = await analysePrompt({ apiKey }, prompt, opts.model ?? getAnalysisModel(), planMultiplier);
       const result = applySessionModifiers(rawResult, sessionCtx);
       spinner?.stop();
 
@@ -175,6 +175,11 @@ program
         console.log('Note: prompt truncated to 2000 characters — analysis based on partial input.');
       }
 
+      const sessionModified =
+        result.estimated_messages_min !== rawResult.estimated_messages_min ||
+        result.estimated_messages_max !== rawResult.estimated_messages_max ||
+        result.interrupt_risk !== rawResult.interrupt_risk;
+
       console.log(renderResult(result, {
         limitPct,
         sessionPct,
@@ -183,6 +188,7 @@ program
         showBreakdown: opts.breakdown,
         noColor: !opts.color,
         sessionContext: sessionCtx,
+        sessionModified,
       }));
     } catch (err) {
       spinner?.stop();

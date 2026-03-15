@@ -88,11 +88,18 @@ describe('buildMetaPrompt', () => {
     }
   });
 
-  test('includes all model names from MODEL_THRESHOLD_BONUS', () => {
-    const result = buildMetaPrompt('test');
+  test('includes all model names when planMultiplier > 1 (Max plan)', () => {
+    const result = buildMetaPrompt('test', 5);
     assert.ok(result.includes('claude-haiku-4-5'));
     assert.ok(result.includes('claude-sonnet-4-6'));
     assert.ok(result.includes('claude-opus-4-6'));
+  });
+
+  test('excludes claude-opus-4-6 when planMultiplier <= 1 (Pro plan)', () => {
+    const result = buildMetaPrompt('test', 1);
+    assert.ok(result.includes('claude-haiku-4-5'));
+    assert.ok(result.includes('claude-sonnet-4-6'));
+    assert.ok(!result.includes('claude-opus-4-6'));
   });
 
   test('truncates oversized prompts before embedding', () => {
