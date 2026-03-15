@@ -43,7 +43,7 @@ program
   .option('--json', 'Output raw JSON instead of formatted terminal output')
   .option('--no-color', 'Plain text output, no terminal colours')
   .option('--model <model>', 'Override which Claude model to use for the analysis call')
-  .option('--plan <plan>', 'Your claude.ai plan: pro, max5, max20, or a multiplier (e.g. 10). Saved for future runs.')
+  .option('--plan <plan>', 'Override your plan for this run only: pro, max5, max20, or a multiplier. Use `claude-check plan` to save permanently.')
   .option('--debug', 'Print diagnostic info about usage auto-fetch')
   .action(async (promptArg: string | undefined, opts: {
     limit?: string;
@@ -84,7 +84,7 @@ program
       const named: Record<string, number> = { pro: 1, max5: 5, max20: 20 };
       const n = Number(opts.plan);
       planMultiplier = named[opts.plan] ?? (Number.isInteger(n) && n >= 1 ? n : 1);
-      setPlanMultiplier(planMultiplier); // persist for future runs
+      // --plan is a per-run override only; use `claude-check plan` to save permanently
     } else {
       planMultiplier = getPlanMultiplier();
     }
@@ -310,6 +310,118 @@ program
     console.log();
     console.log(`API key saved. Plan set to: ${planName[multiplier] ?? `${multiplier}x`}. Model set to: ${modelName[analysisModel]}.`);
     console.log('You can now use claude-check.');
+  });
+
+program
+  .command('plan [plan]')
+  .description('Set your claude.ai plan (interactive if no argument given)')
+  .action(async (planArg: string | undefined) => {
+    const planName: Record<number, string> = { 1: 'Pro', 5: 'Max 5x', 20: 'Max 20x' };
+
+    let multiplier: number;
+
+    if (planArg !== undefined) {
+      const named: Record<string, number> = { pro: 1, max5: 5, max20: 20 };
+      const n = Number(planArg);
+      const resolved = named[planArg.toLowerCase()] ?? (Number.isInteger(n) && n >= 1 ? n : null);
+      if (resolved === null) {
+        console.error('Invalid plan. Use: pro, max5, max20, or a whole number (e.g. 10)');
+        process.exit(1);
+      }
+      multiplier = resolved;
+    } else {
+      const current = getPlanMultiplier();
+      console.log();
+      console.log('Your claude.ai plan:');
+      console.log(`  1. Pro${current === 1 ? ' (current)' : ''}`);
+      console.log(`  2. Max 5x${current === 5 ? ' (current)' : ''}`);
+      console.log(`  3. Max 20x${current === 20 ? ' (current)' : ''}`);
+      console.log();
+      const rl = createInterface({ input: stdin, output: stdout });
+      const answer = await rl.question('Enter plan [1]: ');
+      rl.close();
+      const planMap: Record<string, number> = { '': 1, '1': 1, '2': 5, '3': 20 };
+      multiplier = planMap[answer.trim()] ?? 1;
+    }
+
+    setPlanMultiplier(multiplier);
+    console.log(`Plan set to: ${planName[multiplier] ?? `${multiplier}x`}`);
+  });
+
+program
+  .command('model [model]')
+  .description('Set the analysis model (interactive if no argument given)')
+  .action(async (modelArg: string | undefined) => {
+    const modelMap: Record<string, string> = {
+      haiku: 'claude-haiku-4-5',
+      sonnet: 'claude-sonnet-4-6',
+      'claude-haiku-4-5': 'claude-haiku-4-5',
+      'claude-sonnet-4-6': 'claude-sonnet-4-6',
+    };
+    const modelName: Record<string, string> = {
+      'claude-haiku-4-5': 'Haiku (fast)',
+      'claude-sonnet-4-6': 'Sonnet (accurate)',
+    };
+
+    let resolved: string;
+
+    if (modelArg !== undefined) {
+      const r = modelMap[modelArg.toLowerCase()];
+      if (!r) {
+        console.error('Invalid model. Use: haiku or sonnet');
+        process.exit(1);
+      }
+      resolved = r;
+    } else {
+      const current = getAnalysisModel();
+      console.log();
+      console.log('Analysis model:');
+      console.log(`  1. Haiku — fast and cheap (~$0.001/run)${current === 'claude-haiku-4-5' ? ' (current)' : ''}`);
+      console.log(`  2. Sonnet — higher accuracy on complex prompts (~$0.01/run)${current === 'claude-sonnet-4-6' ? ' (current)' : ''}`);
+      console.log();
+      const rl = createInterface({ input: stdin, output: stdout });
+      const answer = await rl.question('Enter model [1]: ');
+      rl.close();
+      resolved = answer.trim() === '2' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5';
+    }
+
+    setAnalysisModel(resolved);
+    console.log(`Analysis model set to: ${modelName[resolved]}`);
+  });
+
+program
+  .command('status')
+  .description('Show current configuration and API key status')
+  .action(async () => {
+    const apiKey = getApiKey();
+    const multiplier = getPlanMultiplier();
+    const analysisModel = getAnalysisModel();
+
+    const planName: Record<number, string> = { 1: 'Pro', 5: 'Max 5x', 20: 'Max 20x' };
+    const modelName: Record<string, string> = {
+      'claude-haiku-4-5': 'Haiku (fast)',
+      'claude-sonnet-4-6': 'Sonnet (accurate)',
+    };
+
+    console.log();
+    if (apiKey) {
+      const masked = `${apiKey.slice(0, 10)}...${apiKey.slice(-4)}`;
+      console.log(`API key:        ${masked} ✓`);
+    } else {
+      console.log('API key:        not set — run `claude-check setup`');
+    }
+
+    console.log(`Plan:           ${planName[multiplier] ?? `${multiplier}x`}`);
+    console.log(`Analysis model: ${modelName[analysisModel] ?? analysisModel}`);
+
+    const usage = await getAutoUsage();
+    if (usage) {
+      console.log(`Claude Code:    detected — usage auto-fetch active (${usage.weeklyPct}% of weekly limit used)`);
+    } else {
+      console.log('Claude Code:    not detected — pass --limit manually or run `claude-check setup`');
+    }
+
+    console.log();
   });
 
 program.parse();

@@ -147,11 +147,12 @@ export function renderResult(result: AnalysisResult, opts: DisplayOptions = {}):
     lines.push(c.yellow('   Safe to start, but HIGH interrupt risk — consider the breakdown below.'));
   }
 
-  // Breakdown — only show for MEDIUM/HIGH complexity tasks when verdict is do-not-start
+  // Breakdown — show for do-not-start on complex tasks, or whenever safe+HIGH risk (bridging line references it)
   const isComplexEnough = result.complexity === 'MEDIUM' || result.complexity === 'HIGH';
   const showBreakdown =
     opts.showBreakdown ||
-    (verdictResult === 'do-not-start' && isComplexEnough);
+    (verdictResult === 'do-not-start' && isComplexEnough) ||
+    (verdictResult === 'safe' && result.interrupt_risk === 'HIGH');
 
   if (showBreakdown && result.breakdown && result.breakdown.length > 0) {
     lines.push('');

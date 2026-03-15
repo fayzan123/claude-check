@@ -75,6 +75,47 @@ If you have [Claude Code](https://claude.ai/code) installed, `claude-check` will
 
 ---
 
+## Quick config changes
+
+Change just your plan or model without re-running the full setup:
+
+```bash
+claude-check plan    # interactive picker
+claude-check model   # interactive picker
+```
+
+Or pass the value directly to skip the prompt:
+
+```bash
+claude-check plan pro      # switch to Pro
+claude-check plan max5     # switch to Max 5x
+claude-check plan max20    # switch to Max 20x
+
+claude-check model haiku   # use Haiku (~$0.001/run)
+claude-check model sonnet  # use Sonnet (~$0.01/run)
+```
+
+---
+
+## Check your configuration
+
+```bash
+claude-check status
+```
+
+Shows your current API key (masked), plan, analysis model, and whether Claude Code usage auto-fetch is active:
+
+```
+API key:        sk-ant-api0...a1b2 ✓
+Plan:           Max 5x
+Analysis model: Haiku (fast)
+Claude Code:    detected — usage auto-fetch active (42% of weekly limit used)
+```
+
+If no key is configured, you'll see `not set — run claude-check setup` instead.
+
+---
+
 ## Usage
 
 ### Basic analysis
@@ -134,7 +175,7 @@ claude-check --json "summarise this document"
 | Flag | Description |
 |------|-------------|
 | `--limit <number>` | Your remaining claude.ai usage as a percentage (e.g. `--limit 20`). Auto-fetched if Claude Code is installed. |
-| `--plan <plan>` | Your claude.ai plan: `pro`, `max5`, `max20`, or a numeric multiplier (e.g. `10`). Saved for future runs. |
+| `--plan <plan>` | Override your plan for this run only: `pro`, `max5`, `max20`, or a numeric multiplier. Use `claude-check plan` to save permanently. |
 | `--breakdown` | Always show the safer breakdown, even when the verdict is not `do-not-start` |
 | `--json` | Output raw JSON instead of formatted terminal output |
 | `--no-color` | Plain text output, no terminal colours |
